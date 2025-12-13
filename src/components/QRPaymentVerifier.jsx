@@ -1,53 +1,67 @@
 import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
-import * as XLSX from "xlsx";
-import QRCode from "qrcode";
-import JSZip from "jszip";
 
-const PAID_KEY = "pv_paid_list";
-const USED_KEY = "pv_used_list";
-const OP_KEY = "pv_operator";
-const TABLE_KEY = "scan_table";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  doc,
+} from "firebase/firestore";
+import { db } from "../firebase";
+
+
+const verifyQRToken = async (token) => {
+  try {
+    const q = query(
+      collection(db, "qrTokens"),
+      where("token", "==", token)
+    );
+
+    const snapshot = await getDocs(q);
+
+    // ❌ QR not found
+    if (snapshot.empty) {
+      return { status: "invalid", message: "Invalid QR" };
+    }
+
+    const qrDoc = snapshot.docs[0];
+    const data = qrDoc.data();
+
+    // ❌ QR already used
+    if (data.used === true) {
+      return { status: "used", message: "QR already used" };
+    }
+
+    // ✅ QR valid → mark as used
+    await updateDoc(doc(db, "qrTokens", qrDoc.id), {
+      used: true,
+      usedAt: new Date(),
+    });
+
+    return {
+      status: "success",
+      message: "Entry allowed",
+      data,
+    };
+  } catch (error) {
+    console.error(error);
+    return { status: "error", message: "Verification failed" };
+  }
+};
+
 
 /**
  * Helper to safely parse JSON from localStorage
  */
-function safeLoad(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed === null ? fallback : parsed;
-  } catch (e) {
-    console.warn("safeLoad failed for", key, e);
-    return fallback;
-  }
-}
 
-// Parse QR value: "<enroll>+<date>+<session>"
-function parseQRValue(raw) {
-  const cleaned = String(raw || "").trim();
-  if (!cleaned) return null;
 
-  const parts = cleaned.split("+");
-  const enrollment = (parts[0] || "").trim();
-  const date = (parts[1] || "").trim();
-  const session = (parts[2] || "").trim(); // Morning / Afternoon
-
-  return {
-    raw: cleaned,
-    enrollment,
-    date,
-    session,
-  };
-}
 
 export default function QRPaymentVerifier() {
   // initialize state from localStorage
-  const [paidList, setPaidList] = useState(() => safeLoad(PAID_KEY, []));
-  const [usedMap, setUsedMap] = useState(() => safeLoad(USED_KEY, {}));
-  const [operator, setOperator] = useState(() => safeLoad(OP_KEY, ""));
-  const [scanTable, setScanTable] = useState(() => safeLoad(TABLE_KEY, []));
+  
+  const [scanTable, setScanTable] = useState([])
 
   // UI state
   const [result, setResult] = useState(null);
@@ -60,246 +74,56 @@ export default function QRPaymentVerifier() {
   const streamRef = useRef(null);
   const scanTimer = useRef(null);
   const detector = useRef(null);
-
-  /* persist to localStorage */
-  useEffect(() => {
-    try {
-      localStorage.setItem(PAID_KEY, JSON.stringify(paidList));
-    } catch (e) {
-      console.warn(e);
-    }
-  }, [paidList]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(USED_KEY, JSON.stringify(usedMap));
-    } catch (e) {
-      console.warn(e);
-    }
-  }, [usedMap]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(OP_KEY, operator);
-    } catch (e) {
-      console.warn(e);
-    }
-  }, [operator]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TABLE_KEY, JSON.stringify(scanTable));
-    } catch (e) {
-      console.warn(e);
-    }
-  }, [scanTable]);
-
-  /* ---------- helpers ---------- */
-  const normalizeNum = (s) => (s || "").replace(/\D/g, "").trim();
-
-  /* ---------- CSV parse & load ---------- */
-  const parseCSV = (text) => {
-    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
-    return lines.map((line) => {
-      const parts = [];
-      let cur = "";
-      let inQ = false;
-      for (let c of line) {
-        if (c === '"') inQ = !inQ;
-        else if (c === "," && !inQ) {
-          parts.push(cur.trim());
-          cur = "";
-        } else cur += c;
-      }
-      parts.push(cur.trim());
-      return parts;
-    });
-  };
-
-  const loadFromRows = (rows) => {
-    if (!Array.isArray(rows) || rows.length === 0) {
-      alert("No rows found in file/text.");
-      return;
-    }
-    const header = rows[0].map((h) => String(h).toLowerCase());
-    const hasHeader = header.some((h) => /enroll|roll|reg|phone|name/.test(h));
-    const start = hasHeader ? 1 : 0;
-    const out = [];
-    for (let i = start; i < rows.length; i++) {
-      const r = rows[i];
-      out.push({
-        enrollment: String(r[0] || "").trim(),
-        phone: normalizeNum(r[1] || ""),
-        name: String(r[2] || "").trim(),
-      });
-    }
-    setPaidList(out);
-    setResult({ type: "info", msg: `Loaded ${out.length} records` });
-  };
-
-  /* ---------- excel upload ---------- */
-  const handleExcelUpload = (file) => {
-    try {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const workbook = XLSX.read(evt.target.result, { type: "binary" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        loadFromRows(rows);
-      };
-      reader.readAsBinaryString(file);
-    } catch (e) {
-      alert("Failed to read Excel file: " + e.message);
-    }
-  };
-
-  /* ---------- find student by enrollment/phone ---------- */
-  const findStudent = (qrOrEnrollment) => {
-    const num = normalizeNum(qrOrEnrollment || "");
-    if (!num) return null;
-
-    const byEnroll = paidList.find((p) => normalizeNum(p.enrollment) === num);
-    if (byEnroll) return byEnroll;
-
-    const byPhone = paidList.find((p) => p.phone === num);
-    if (byPhone) return byPhone;
-
-    return paidList.find(
-      (p) =>
-        normalizeNum(p.enrollment).endsWith(num) ||
-        (p.phone && p.phone.endsWith(num))
-    );
-  };
-
-  /* ---------- mark as used ---------- */
-  const markUsed = (rec, meta) => {
-    const base = normalizeNum(rec.enrollment);
-    if (!base) return;
-
-    const date = meta?.date || "";
-    const session = meta?.session || "";
-    const key = `${base}|${date}|${session}`; // per enrollment+date+session
-    const nowISO = new Date().toISOString();
-
-    setUsedMap((prev) => {
-      if (prev[key]) return prev; // already used for this date+session
-      return {
-        ...prev,
-        [key]: {
-          ...rec,
-          operator,
-          when: nowISO,
-          examDate: date,
-          session,
-          raw: meta?.raw || "",
-        },
-      };
-    });
-
-    setResult({
-      type: "paid",
-      msg: `${rec.name || rec.enrollment} verified`,
-      rec,
-      when: nowISO,
-      examDate: date,
-      session,
-    });
-  };
-
-  /* ---------- table operations ---------- */
-  const addToTable = (rec, meta) => {
-    if (!rec || !rec.enrollment) return;
-    const date = meta?.date || "";
-    const session = meta?.session || "";
-
-    // allow same student multiple times, but not same date+session twice
-    const exists = scanTable.some(
-      (r) =>
-        r.enrollment === rec.enrollment &&
-        r.examDate === date &&
-        r.session === session
-    );
-    if (exists) return;
-
-    const entry = {
-      id: scanTable.length + 1,
-      enrollment: rec.enrollment,
-      name: rec.name || "",
-      phone: rec.phone || "",
-      time: new Date().toLocaleString(),
-      examDate: date,
-      session,
-    };
-    setScanTable((prev) => [...prev, entry]);
-  };
-
+  
   /* ---------- process scanned value ---------- */
-  const processScan = (raw) => {
-    stopCamera();
+  const processScan = async (raw) => {
+  stopCamera();
 
-    const parsed = parseQRValue(raw);
-    if (!parsed || !parsed.enrollment) {
-      setResult({
-        type: "notpaid",
-        msg: "Invalid or empty QR",
-        raw: raw,
-      });
-      setScanData(null);
-      return;
-    }
-
-    const rec = findStudent(parsed.enrollment);
-
-    // Not found in paid list
-    if (!rec) {
-      setResult({
-        type: "notpaid",
-        msg: "Not found",
-        raw: parsed.raw,
-      });
-      setScanData(null);
-      return;
-    }
-
-    const baseKey = normalizeNum(rec.enrollment);
-    const date = parsed.date || "";
-    const session = parsed.session || "";
-    const sessionKey = `${baseKey}|${date}|${session}`;
-
-    // Check if this specific enrollment+date+session was already scanned
-    let used = usedMap && usedMap[sessionKey];
-
-    // Fallback: legacy key that used only enrollment
-    if (!used && usedMap && usedMap[baseKey]) {
-      used = usedMap[baseKey];
-    }
-
-    if (used) {
-      setResult({
-        type: "used",
-        msg: `${rec.name || rec.enrollment} already scanned`,
-        rec,
-        when: used.when,
-        examDate: used.examDate || date,
-        session: used.session || session,
-      });
-      setScanData({
-        ...rec,
-        examDate: used.examDate || date,
-        session: used.session || session,
-      });
-      return;
-    }
-
-    // valid first-time scan for this date+session
-    addToTable(rec, parsed);
-    setScanData({
-      ...rec,
-      examDate: date,
-      session,
+  const token = String(raw || "").trim();
+  if (!token) {
+    setResult({
+      type: "notpaid",
+      msg: "Empty QR",
     });
-    markUsed(rec, parsed);
+    return;
+  }
+
+  const result = await verifyQRToken(token);
+
+ if (result.status === "success") {
+  const entry = {
+    id: scanTable.length + 1,
+    enrollment: result.data.contact,
+    name: "",
+    phone: "",
+    examDate: result.data.examDate,
+    session: result.data.tripType,
+    time: new Date().toLocaleString(),
   };
+
+  setScanTable((prev) => [...prev, entry]);
+
+  setResult({
+    type: "paid",
+    msg: "ENTRY ALLOWED",
+    rec: {
+      enrollment: result.data.contact,
+      name: "",
+    },
+    when: new Date().toISOString(),
+    examDate: result.data.examDate,
+    session: result.data.tripType,
+  });
+
+  setScanData({
+    enrollment: result.data.contact,
+    name: "",
+    examDate: result.data.examDate,
+    session: result.data.tripType,
+  });
+}
+}
+
 
   /* ---------- scanning (camera) ---------- */
   const initDetector = async () => {
@@ -391,33 +215,10 @@ export default function QRPaymentVerifier() {
   };
 
   /* ---------- export used ---------- */
-  const exportUsed = () => {
-    const arr = Object.values(usedMap || {});
-    if (!arr.length) {
-      alert("No used records");
-      return;
-    }
-    const csv = [
-      "enrollment,phone,name,when,operator,examDate,session,raw",
-      ...arr.map((u) =>
-        [
-          u.enrollment,
-          u.phone,
-          u.name,
-          u.when,
-          u.operator || "",
-          u.examDate || "",
-          u.session || "",
-          u.raw || "",
-        ].join(",")
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "used_records.csv";
-    a.click();
-  };
+ const exportUsed = () => {
+  alert("Export will be added later from Firebase");
+};
+
 
   /* ---------- UI ---------- */
   return (
@@ -448,162 +249,7 @@ export default function QRPaymentVerifier() {
           gap: 12,
         }}
       >
-        {/* Load List Card */}
-        <section
-          style={{
-            flex: 1,
-            minWidth: 260,
-            borderRadius: 12,
-            background: "#ffffff",
-            padding: 12,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-          }}
-        >
-          <div
-            style={{
-              fontWeight: 600,
-              marginBottom: 4,
-              fontSize: 15,
-            }}
-          >
-            1. Load Student List
-          </div>
-          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
-            Upload CSV / Excel (Contact, Semester, name) before scanning.
-          </div>
-          <textarea
-            id="csvInput"
-            placeholder="Paste CSV here: contact,semester,name"
-            style={{
-              width: "100%",
-              minHeight: 70,
-              padding: 8,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              fontSize: 12,
-            }}
-          />
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              marginTop: 8,
-            }}
-          >
-            <button
-              onClick={() => {
-                const txt = document.getElementById("csvInput").value;
-                if (!txt) return alert("Paste CSV first");
-                try {
-                  loadFromRows(parseCSV(txt));
-                } catch (e) {
-                  alert("Failed to parse CSV: " + e.message);
-                }
-              }}
-              style={{
-                flex: 1,
-                minWidth: 120,
-                padding: "8px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#2563eb",
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
-            >
-              Load CSV
-            </button>
-
-            <label
-              style={{
-                flex: 1,
-                minWidth: 140,
-                padding: "8px 10px",
-                borderRadius: 999,
-                textAlign: "center",
-                background: "#16a34a",
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              Upload File
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (file.name.endsWith(".csv")) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                      try {
-                        loadFromRows(parseCSV(ev.target.result));
-                      } catch {
-                        alert("Invalid CSV");
-                      }
-                    };
-                    reader.readAsText(file);
-                  } else {
-                    handleExcelUpload(file);
-                  }
-                }}
-              />
-            </label>
-
-            <button
-              onClick={() => {
-                if (
-                  confirm(
-                    "Clear loaded student list AND all scanned history (table + used records)?"
-                  )
-                ) {
-                  setPaidList([]);
-                  setUsedMap({});
-                  setScanTable([]);
-                  setScanData(null);
-                  setResult(null);
-                  try {
-                    localStorage.removeItem(PAID_KEY);
-                    localStorage.removeItem(USED_KEY);
-                    localStorage.removeItem(TABLE_KEY);
-                  } catch (e) {
-                    console.warn("Failed to clear storage", e);
-                  }
-                }
-              }}
-              style={{
-                flex: 1,
-                minWidth: 140,
-                padding: "8px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#dc2626",
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div
-            style={{
-              fontSize: 12,
-              color: "#4b5563",
-              marginTop: 6,
-            }}
-          >
-            Loaded students:{" "}
-            <span style={{ fontWeight: 600 }}>{paidList.length}</span>
-          </div>
-        </section>
-
+        
         {/* Scanner Card */}
         <section
           style={{
@@ -841,7 +487,7 @@ export default function QRPaymentVerifier() {
           <div style={{ fontSize: 13 }}>
             <div>Contact: {scanData.enrollment}</div>
             <div>Name: {scanData.name}</div>
-            <div>Semester: {scanData.phone}</div>
+            
             {scanData.examDate && <div>Date of Exam: {scanData.examDate}</div>}
             {scanData.session && <div>Session: {scanData.session}</div>}
           </div>
