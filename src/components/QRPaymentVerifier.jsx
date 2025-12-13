@@ -77,18 +77,25 @@ export default function QRPaymentVerifier() {
   const detector = useRef(null);
   const parseCSV = (text) => {
   return text
-    .split("\n")
-    .map(r => r.split(","))
+    .split(/\r?\n/)
+    .map(r => r.trim())
+    .filter(Boolean)
     .slice(1)
-    .map(r => ({
-      phone: r[0]?.trim(),
-      name: r[1]?.trim(),
-    }));
+    .map(r => {
+      const [phone, name] = r.split(",");
+      return {
+        phone: (phone || "").replace(/\D/g, ""),
+        name: (name || "").trim(),
+      };
+    });
 };
+
 
   
   /* ---------- process scanned value ---------- */
   const processScan = async (raw) => {
+    if (result) return;
+
   const token = String(raw || "").trim();
   if (!token) return;
 
