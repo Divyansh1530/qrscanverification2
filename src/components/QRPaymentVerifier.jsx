@@ -60,7 +60,8 @@ const verifyQRToken = async (token) => {
 
 export default function QRPaymentVerifier() {
   // initialize state from localStorage
-  
+  const [students, setStudents] = useState([]);
+
   const [scanTable, setScanTable] = useState([])
 
   // UI state
@@ -74,56 +75,74 @@ export default function QRPaymentVerifier() {
   const streamRef = useRef(null);
   const scanTimer = useRef(null);
   const detector = useRef(null);
+  const parseCSV = (text) => {
+  return text
+    .split("\n")
+    .map(r => r.split(","))
+    .slice(1)
+    .map(r => ({
+      phone: r[0]?.trim(),
+      name: r[1]?.trim(),
+    }));
+};
+
   
   /* ---------- process scanned value ---------- */
   const processScan = async (raw) => {
-  stopCamera();
-
   const token = String(raw || "").trim();
-  if (!token) {
+  if (!token) return;
+
+  const res = await verifyQRToken(token);
+
+  // ❌ invalid QR
+  if (res.status === "invalid") {
+    setResult({ type: "notpaid", msg: "INVALID QR" });
+    return;
+  }
+
+  // ❌ already used
+  if (res.status === "used") {
+    setResult({ type: "used", msg: "QR ALREADY USED" });
+    return;
+  }
+
+  // ✅ valid token → check student
+  const student = students.find(
+    s => s.phone === res.data.contact
+  );
+
+  if (!student) {
     setResult({
       type: "notpaid",
-      msg: "Empty QR",
+      msg: "Student not in allowed list",
     });
     return;
   }
 
-  const result = await verifyQRToken(token);
-
- if (result.status === "success") {
-  const entry = {
-    id: scanTable.length + 1,
-    enrollment: result.data.contact,
-    name: "",
-    phone: "",
-    examDate: result.data.examDate,
-    session: result.data.tripType,
-    time: new Date().toLocaleString(),
-  };
-
-  setScanTable((prev) => [...prev, entry]);
+  // ✅ EVERYTHING OK
+  setScanTable(prev => [
+    ...prev,
+    {
+      id: prev.length + 1,
+      enrollment: student.phone,
+      name: student.name,
+      examDate: res.data.examDate,
+      session: res.data.tripType,
+      time: new Date().toLocaleString(),
+    }
+  ]);
 
   setResult({
     type: "paid",
     msg: "ENTRY ALLOWED",
-    rec: {
-      enrollment: result.data.contact,
-      name: "",
-    },
+    rec: student,
+    examDate: res.data.examDate,
+    session: res.data.tripType,
     when: new Date().toISOString(),
-    examDate: result.data.examDate,
-    session: result.data.tripType,
   });
 
-  setScanData({
-    enrollment: result.data.contact,
-    name: "",
-    examDate: result.data.examDate,
-    session: result.data.tripType,
-  });
-}
-}
-
+  stopCamera();
+};
 
   /* ---------- scanning (camera) ---------- */
   const initDetector = async () => {
@@ -223,6 +242,7 @@ export default function QRPaymentVerifier() {
   /* ---------- UI ---------- */
   return (
     <div
+    
       style={{
         maxWidth: 900,
         margin: "8px auto",
@@ -231,6 +251,16 @@ export default function QRPaymentVerifier() {
         background: "#f3f4f6",
       }}
     >
+    <textarea id="csvInput" placeholder="phone,name" />
+<button
+  onClick={() => {
+    const txt = document.getElementById("csvInput").value;
+    setStudents(parseCSV(txt));
+  }}
+>
+  Load CSV
+</button>
+
       {/* Header */}
       <header
         style={{
