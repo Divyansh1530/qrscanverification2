@@ -258,17 +258,10 @@ export default function QRPaymentVerifier() {
         background: "#f3f4f6",
       }}
     >
-    <textarea id="csvInput" placeholder="phone,name" />
-<button
-  onClick={() => {
-    const txt = document.getElementById("csvInput").value;
-    setStudents(parseCSV(txt));
-  }}
->
-  Load CSV
-</button>
+    
 
       {/* Header */}
+      
       <header
         style={{
           marginBottom: 10,
@@ -278,6 +271,15 @@ export default function QRPaymentVerifier() {
         <h1 style={{ fontSize: 22, margin: 0 }}>Exam Bus QR Scanner</h1>
       </header>
 
+        <textarea id="csvInput" placeholder="phone,name" />
+<button
+  onClick={() => {
+    const txt = document.getElementById("csvInput").value;
+    setStudents(parseCSV(txt));
+  }}
+>
+  Load CSV
+</button>
       {/* TOP ROW: Load + Scanner stacked on mobile */}
       <div
         style={{
