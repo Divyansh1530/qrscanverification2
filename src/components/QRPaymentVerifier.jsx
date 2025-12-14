@@ -141,13 +141,12 @@ const processScan = async (raw) => {
     });
   }
 
-  // ✅ AUTO RESET FOR NEXT STUDENT
+  // ✅ unlock for NEXT student (but DO NOT restart camera)
   setTimeout(() => {
     scanLockedRef.current = false;
-    setResult(null);
-    startCamera();
   }, 1500);
 };
+
 
 
 
