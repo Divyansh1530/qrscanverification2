@@ -169,6 +169,8 @@ const processScan = async (raw) => {
   };
 
   const startCamera = async () => {
+    console.log("startCamera called");
+
     scanLockedRef.current = false;
 
 
@@ -226,6 +228,8 @@ const processScan = async (raw) => {
   };
 
  const scanFrame = async () => {
+  console.log("scanFrame running");
+
   if (scanLockedRef.current) return;
   if (!videoRef.current || !videoRef.current.videoWidth) return;
 
@@ -237,6 +241,11 @@ const processScan = async (raw) => {
         scanLockedRef.current = true;     // 🔒 LOCK
         clearInterval(scanTimer.current); // ⛔ STOP LOOP IMMEDIATELY
         scanTimer.current = null;
+        console.log("QR DETECTED:", codes[0].rawValue);
+        console.log("QR DETECTED:", code.data);
+
+console.log("QR RAW VALUE:", code.data);
+
         processScan(codes[0].rawValue);
       }
       return;
@@ -256,6 +265,7 @@ const processScan = async (raw) => {
   const code = jsQR(img.data, img.width, img.height);
 
   if (code?.data) {
+     console.log("QR DETECTED RAW:", JSON.stringify(code.data));
     scanLockedRef.current = true;         // 🔒 LOCK
     clearInterval(scanTimer.current);     // ⛔ STOP LOOP IMMEDIATELY
     scanTimer.current = null;
