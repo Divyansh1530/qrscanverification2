@@ -10,6 +10,8 @@ import {
   doc,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { runTransaction } from "firebase/firestore";
+
 
 
 const verifyQRToken = async (token) => {
@@ -21,35 +23,42 @@ const verifyQRToken = async (token) => {
 
     const snapshot = await getDocs(q);
 
-    // ❌ QR not found
     if (snapshot.empty) {
-      return { status: "invalid", message: "Invalid QR" };
+      return { status: "invalid" };
     }
 
-    const qrDoc = snapshot.docs[0];
-    const data = qrDoc.data();
+    const qrDocRef = snapshot.docs[0].ref;
 
-    // ❌ QR already used
-    if (data.used === true) {
-      return { status: "used", message: "QR already used" };
-    }
+    return await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(qrDocRef);
 
-    // ✅ QR valid → mark as used
-    await updateDoc(doc(db, "qrTokens", qrDoc.id), {
-      used: true,
-      usedAt: new Date(),
+      if (!snap.exists()) {
+        return { status: "invalid" };
+      }
+
+      const data = snap.data();
+
+      if (data.used === true) {
+        return { status: "used" };
+      }
+
+      // ✅ READ + WRITE TOGETHER (ATOMIC)
+      transaction.update(qrDocRef, {
+        used: true,
+        usedAt: new Date(),
+      });
+
+      return {
+        status: "success",
+        data,
+      };
     });
-
-    return {
-      status: "success",
-      message: "Entry allowed",
-      data,
-    };
-  } catch (error) {
-    console.error(error);
-    return { status: "error", message: "Verification failed" };
+  } catch (err) {
+    console.error(err);
+    return { status: "error" };
   }
 };
+
 
 
 /**
@@ -59,6 +68,8 @@ const verifyQRToken = async (token) => {
 
 
 export default function QRPaymentVerifier() {
+const scanLockedRef = useRef(false);
+
   // initialize state from localStorage
   const [students, setStudents] = useState([]);
 
@@ -93,63 +104,48 @@ export default function QRPaymentVerifier() {
 
   
   /* ---------- process scanned value ---------- */
-  const processScan = async (raw) => {
-    if (result) return;
-
+const processScan = async (raw) => {
   const token = String(raw || "").trim();
   if (!token) return;
 
   const res = await verifyQRToken(token);
 
-  // ❌ invalid QR
   if (res.status === "invalid") {
     setResult({ type: "notpaid", msg: "INVALID QR" });
     return;
   }
 
-  // ❌ already used
   if (res.status === "used") {
     setResult({ type: "used", msg: "QR ALREADY USED" });
     return;
   }
 
-  // ✅ valid token → check student
-  const student = students.find(
-    s => s.phone === res.data.contact
-  );
-
-  if (!student) {
-    setResult({
-      type: "notpaid",
-      msg: "Student not in allowed list",
-    });
-    return;
-  }
-
-  // ✅ EVERYTHING OK
-  setScanTable(prev => [
+  // ✅ SUCCESS (ONLY ONCE)
+  setScanTable((prev) => [
     ...prev,
     {
       id: prev.length + 1,
-      enrollment: student.phone,
-      name: student.name,
+      enrollment: res.data.contact,
+      name: "",
       examDate: res.data.examDate,
       session: res.data.tripType,
       time: new Date().toLocaleString(),
-    }
+    },
   ]);
 
   setResult({
     type: "paid",
     msg: "ENTRY ALLOWED",
-    rec: student,
+    rec: { enrollment: res.data.contact },
     examDate: res.data.examDate,
     session: res.data.tripType,
     when: new Date().toISOString(),
   });
-
-  stopCamera();
 };
+
+
+
+
 
   /* ---------- scanning (camera) ---------- */
   const initDetector = async () => {
@@ -167,6 +163,9 @@ export default function QRPaymentVerifier() {
   };
 
   const startCamera = async () => {
+    scanLockedRef.current = false;
+
+
     await initDetector();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -220,25 +219,44 @@ export default function QRPaymentVerifier() {
     setSupportMsg("Camera stopped");
   };
 
-  const scanFrame = async () => {
-    if (!videoRef.current || !videoRef.current.videoWidth) return;
-    if (detector.current) {
-      try {
-        const codes = await detector.current.detect(videoRef.current);
-        if (codes && codes.length) processScan(codes[0].rawValue);
-        return;
-      } catch (e) {}
-    }
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(img.data, img.width, img.height);
-    if (code && code.data) processScan(code.data);
-  };
+ const scanFrame = async () => {
+  if (scanLockedRef.current) return;
+  if (!videoRef.current || !videoRef.current.videoWidth) return;
+
+  // Native detector
+  if (detector.current) {
+    try {
+      const codes = await detector.current.detect(videoRef.current);
+      if (codes && codes.length) {
+        scanLockedRef.current = true;     // 🔒 LOCK
+        clearInterval(scanTimer.current); // ⛔ STOP LOOP IMMEDIATELY
+        scanTimer.current = null;
+        processScan(codes[0].rawValue);
+      }
+      return;
+    } catch {}
+  }
+
+  // jsQR fallback
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(img.data, img.width, img.height);
+
+  if (code?.data) {
+    scanLockedRef.current = true;         // 🔒 LOCK
+    clearInterval(scanTimer.current);     // ⛔ STOP LOOP IMMEDIATELY
+    scanTimer.current = null;
+    processScan(code.data);
+  }
+};
+
 
   /* ---------- export used ---------- */
  const exportUsed = () => {
