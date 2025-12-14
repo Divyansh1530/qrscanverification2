@@ -101,6 +101,12 @@ const scanLockedRef = useRef(false);
     });
 };
 
+const pauseScanning = () => {
+  if (scanTimer.current) {
+    clearInterval(scanTimer.current);
+    scanTimer.current = null;
+  }
+};
 
   
   /* ---------- process scanned value ---------- */
@@ -108,7 +114,7 @@ const processScan = async (raw) => {
   if (scanLockedRef.current) return;
   scanLockedRef.current = true;
 
-  stopCamera();
+  pauseScanning(); // ⛔ pause scanning, camera stays alive
 
   const token = String(raw || "").trim();
   if (!token) return;
@@ -141,11 +147,13 @@ const processScan = async (raw) => {
     });
   }
 
-  // ✅ unlock for NEXT student (but DO NOT restart camera)
+  // ✅ Resume scanning for NEXT student
   setTimeout(() => {
     scanLockedRef.current = false;
-  }, 1500);
+    startCamera();
+  }, 2000);
 };
+
 
 
 
@@ -242,9 +250,8 @@ const processScan = async (raw) => {
         clearInterval(scanTimer.current); // ⛔ STOP LOOP IMMEDIATELY
         scanTimer.current = null;
         console.log("QR DETECTED:", codes[0].rawValue);
-        console.log("QR DETECTED:", code.data);
 
-console.log("QR RAW VALUE:", code.data);
+
 
         processScan(codes[0].rawValue);
       }
@@ -255,7 +262,8 @@ console.log("QR RAW VALUE:", code.data);
   // jsQR fallback
   const video = videoRef.current;
   const canvas = canvasRef.current;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
