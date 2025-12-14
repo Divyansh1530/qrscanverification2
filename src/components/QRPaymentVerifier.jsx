@@ -111,6 +111,25 @@ const pauseScanning = () => {
   
   /* ---------- process scanned value ---------- */
 const processScan = async (raw) => {
+  if (scanLockedRef.current) return;
+  scanLockedRef.current = true;
+
+  // 🛑 STOP CAMERA IMMEDIATELY
+  if (scanTimer.current) {
+    clearInterval(scanTimer.current);
+    scanTimer.current = null;
+  }
+
+  if (streamRef.current) {
+    streamRef.current.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }
+
+  if (videoRef.current) {
+    videoRef.current.pause();
+    videoRef.current.srcObject = null;
+  }
+
   const token = String(raw || "").trim();
   if (!token) return;
 
@@ -118,38 +137,42 @@ const processScan = async (raw) => {
 
   if (res.status === "invalid") {
     setResult({ type: "notpaid", msg: "INVALID QR" });
-  } 
-  else if (res.status === "used") {
-    setResult({ type: "used", msg: "QR ALREADY USED" });
-  } 
-  else if (res.status === "success") {
-    setScanTable(prev => [
-      ...prev,
-      {
-        id: prev.length + 1,
-        enrollment: res.data.contact,
-        examDate: res.data.examDate,
-        session: res.data.tripType,
-        time: new Date().toLocaleString(),
-      },
-    ]);
-
-    setResult({
-      type: "paid",
-      msg: "ENTRY ALLOWED",
-      rec: { enrollment: res.data.contact },
-      examDate: res.data.examDate,
-      session: res.data.tripType,
-      when: new Date().toISOString(),
-    });
+    return;
   }
 
-  // 🔁 AFTER RESULT → UNLOCK & RESTART SCANNING
-  setTimeout(() => {
-    scanLockedRef.current = false;
-    startCamera();
-  }, 2000);
+  if (res.status === "used") {
+    setResult({ type: "used", msg: "QR ALREADY USED" });
+    return;
+  }
+
+  // ✅ SUCCESS
+  setScanTable(prev => [
+    ...prev,
+    {
+      id: prev.length + 1,
+      enrollment: res.data.contact,
+      name: res.data.name || "-",
+      semester: res.data.semester || "-",
+      examDate: res.data.examDate,
+      session: res.data.tripType,
+      time: new Date().toLocaleString(),
+    },
+  ]);
+
+  setResult({
+    type: "paid",
+    msg: "ENTRY ALLOWED",
+    rec: {
+      enrollment: res.data.contact,
+      name: res.data.name || "-",
+      semester: res.data.semester || "-",
+    },
+    examDate: res.data.examDate,
+    session: res.data.tripType,
+    when: new Date().toISOString(),
+  });
 };
+
 
 
 
@@ -267,8 +290,12 @@ const processScan = async (raw) => {
 
 if (code?.data && !scanLockedRef.current) {
   scanLockedRef.current = true;
-  clearInterval(scanTimer.current);
-  scanTimer.current = null;
+
+  if (scanTimer.current) {
+    clearInterval(scanTimer.current);
+    scanTimer.current = null;
+  }
+
   processScan(code.data);
 }
  }
@@ -416,20 +443,13 @@ if (code?.data && !scanLockedRef.current) {
           >
             <button
                onClick={() => {
-    const v = prompt("Paste QR value:");
-    if (!v) return;
+  const v = prompt("Paste QR value:");
+  if (!v) return;
 
-    // 🔓 FORCE UNLOCK
-    scanLockedRef.current = false;
+  scanLockedRef.current = false;
+  processScan(v);
+}}
 
-    // ⛔ STOP CAMERA (manual mode)
-    if (scanTimer.current) {
-      clearInterval(scanTimer.current);
-      scanTimer.current = null;
-    }
-
-    processScan(v);
-  }}
 
 
               style={{
