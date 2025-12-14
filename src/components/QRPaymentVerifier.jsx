@@ -111,14 +111,8 @@ const pauseScanning = () => {
   
   /* ---------- process scanned value ---------- */
 const processScan = async (raw) => {
-  // 🔒 lock immediately
-  scanLockedRef.current = true;
-
   const token = String(raw || "").trim();
-  if (!token) {
-    scanLockedRef.current = false;
-    return;
-  }
+  if (!token) return;
 
   const res = await verifyQRToken(token);
 
@@ -150,11 +144,13 @@ const processScan = async (raw) => {
     });
   }
 
-  // 🔓 unlock AFTER result is shown
+  // 🔁 AFTER RESULT → UNLOCK & RESTART SCANNING
   setTimeout(() => {
     scanLockedRef.current = false;
-  }, 1200);
+    startCamera();
+  }, 2000);
 };
+
 
 
 
@@ -269,14 +265,13 @@ const processScan = async (raw) => {
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const code = jsQR(img.data, img.width, img.height);
 
-  if (code?.data) {
-    //  console.log("QR DETECTED RAW:", JSON.stringify(code.data));
-    scanLockedRef.current = true;         // 🔒 LOCK
-    clearInterval(scanTimer.current);     // ⛔ STOP LOOP IMMEDIATELY
-    scanTimer.current = null;
-    processScan(code.data);
-  }
-};
+if (code?.data && !scanLockedRef.current) {
+  scanLockedRef.current = true;
+  clearInterval(scanTimer.current);
+  scanTimer.current = null;
+  processScan(code.data);
+}
+ }
 
 
   /* ---------- export used ---------- */
@@ -424,10 +419,18 @@ const processScan = async (raw) => {
     const v = prompt("Paste QR value:");
     if (!v) return;
 
-    // force unlock for manual paste
+    // 🔓 FORCE UNLOCK
     scanLockedRef.current = false;
+
+    // ⛔ STOP CAMERA (manual mode)
+    if (scanTimer.current) {
+      clearInterval(scanTimer.current);
+      scanTimer.current = null;
+    }
+
     processScan(v);
   }}
+
 
               style={{
                 flex: 1,
