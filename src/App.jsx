@@ -1,17 +1,17 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-import QRPaymentVerifier from './components/QRPaymentVerifier'
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-function App() {
-  
+import AdminGenerateQR from "./components/AdminGenerateQr";
+import StudentGenerateQR from "./components/StudentGenerateQr";
+import QRPaymentVerifier from "./components/QRPaymentVerifier";
 
+export default function App() {
   return (
-    <>
-      <QRPaymentVerifier />
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<StudentGenerateQR />} />
+        <Route path="/admin" element={<AdminGenerateQR />} />
+        <Route path="/scan" element={<QRPaymentVerifier />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
-
-export default App
