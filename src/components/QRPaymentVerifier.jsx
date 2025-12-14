@@ -105,6 +105,11 @@ const scanLockedRef = useRef(false);
   
   /* ---------- process scanned value ---------- */
 const processScan = async (raw) => {
+  if (scanLockedRef.current) return;
+  scanLockedRef.current = true;
+
+  stopCamera();
+
   const token = String(raw || "").trim();
   if (!token) return;
 
@@ -112,36 +117,38 @@ const processScan = async (raw) => {
 
   if (res.status === "invalid") {
     setResult({ type: "notpaid", msg: "INVALID QR" });
-    return;
-  }
-
-  if (res.status === "used") {
+  } else if (res.status === "used") {
     setResult({ type: "used", msg: "QR ALREADY USED" });
-    return;
-  }
+  } else {
+    setScanTable((prev) => [
+      ...prev,
+      {
+        id: prev.length + 1,
+        enrollment: res.data.contact,
+        examDate: res.data.examDate,
+        session: res.data.tripType,
+        time: new Date().toLocaleString(),
+      },
+    ]);
 
-  // ✅ SUCCESS (ONLY ONCE)
-  setScanTable((prev) => [
-    ...prev,
-    {
-      id: prev.length + 1,
-      enrollment: res.data.contact,
-      name: "",
+    setResult({
+      type: "paid",
+      msg: "ENTRY ALLOWED",
+      rec: { enrollment: res.data.contact },
       examDate: res.data.examDate,
       session: res.data.tripType,
-      time: new Date().toLocaleString(),
-    },
-  ]);
+      when: new Date().toISOString(),
+    });
+  }
 
-  setResult({
-    type: "paid",
-    msg: "ENTRY ALLOWED",
-    rec: { enrollment: res.data.contact },
-    examDate: res.data.examDate,
-    session: res.data.tripType,
-    when: new Date().toISOString(),
-  });
+  // ✅ AUTO RESET FOR NEXT STUDENT
+  setTimeout(() => {
+    scanLockedRef.current = false;
+    setResult(null);
+    startCamera();
+  }, 1500);
 };
+
 
 
 
