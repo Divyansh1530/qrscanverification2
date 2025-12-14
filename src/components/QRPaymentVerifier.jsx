@@ -111,22 +111,25 @@ const pauseScanning = () => {
   
   /* ---------- process scanned value ---------- */
 const processScan = async (raw) => {
-  if (scanLockedRef.current) return;
+  // 🔒 lock immediately
   scanLockedRef.current = true;
 
-  pauseScanning(); // ⛔ pause scanning, camera stays alive
-
   const token = String(raw || "").trim();
-  if (!token) return;
+  if (!token) {
+    scanLockedRef.current = false;
+    return;
+  }
 
   const res = await verifyQRToken(token);
 
   if (res.status === "invalid") {
     setResult({ type: "notpaid", msg: "INVALID QR" });
-  } else if (res.status === "used") {
+  } 
+  else if (res.status === "used") {
     setResult({ type: "used", msg: "QR ALREADY USED" });
-  } else {
-    setScanTable((prev) => [
+  } 
+  else if (res.status === "success") {
+    setScanTable(prev => [
       ...prev,
       {
         id: prev.length + 1,
@@ -147,17 +150,11 @@ const processScan = async (raw) => {
     });
   }
 
-  // ✅ Resume scanning for NEXT student
+  // 🔓 unlock AFTER result is shown
   setTimeout(() => {
     scanLockedRef.current = false;
-    startCamera();
-  }, 2000);
+  }, 1200);
 };
-
-
-
-
-
 
 
 
@@ -273,10 +270,10 @@ const processScan = async (raw) => {
   const code = jsQR(img.data, img.width, img.height);
 
   if (code?.data) {
-     console.log("QR DETECTED RAW:", JSON.stringify(code.data));
+    //  console.log("QR DETECTED RAW:", JSON.stringify(code.data));
     scanLockedRef.current = true;         // 🔒 LOCK
     clearInterval(scanTimer.current);     // ⛔ STOP LOOP IMMEDIATELY
-    scanTimer.current = null;
+    // scanTimer.current = null;
     processScan(code.data);
   }
 };
@@ -423,10 +420,15 @@ const processScan = async (raw) => {
             }}
           >
             <button
-              onClick={() => {
-                const v = prompt("Paste QR value:");
-                if (v) processScan(v);
-              }}
+               onClick={() => {
+    const v = prompt("Paste QR value:");
+    if (!v) return;
+
+    // force unlock for manual paste
+    scanLockedRef.current = false;
+    processScan(v);
+  }}
+
               style={{
                 flex: 1,
                 minWidth: 140,
