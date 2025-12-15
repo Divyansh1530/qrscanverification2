@@ -829,27 +829,46 @@ export default function QRPaymentVerifier() {
       )}
 
       {scanData && (
-        <section
-          style={{
-            marginTop: 8,
-            borderRadius: 12,
-            background: "#ecfeff",
-            padding: 10,
-            border: "1px solid #bae6fd",
-          }}
-        >
-          <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>
-            Last Scanned
-          </div>
-          <div style={{ fontSize: 13 }}>
-            <div>Name: {scanData.enrollment}</div>
-            <div>Name: {scanData.name}</div>
-            <div>Phone: {scanData.phone}</div>
-            {scanData.examDate && <div>Date of Exam: {scanData.examDate}</div>}
-            {scanData.session && <div>Session: {scanData.session}</div>}
-          </div>
-        </section>
+  <section
+    style={{
+      marginTop: 8,
+      borderRadius: 12,
+      background: "#ecfeff",
+      padding: 10,
+      border: "1px solid #bae6fd",
+    }}
+  >
+    <div
+      style={{
+        fontWeight: 700,
+        marginBottom: 6,
+        fontSize: 15,
+        color: "#065f46",
+      }}
+    >
+      ✅ {scanData.enrollment} scanned successfully
+    </div>
+
+    <div style={{ fontSize: 13 }}>
+      <div>
+        <strong>Name:</strong> {scanData.enrollment}
+      </div>
+      <div>
+        <strong>Phone:</strong> {scanData.phone}
+      </div>
+      {scanData.examDate && (
+        <div>
+          <strong>Date of Exam:</strong> {scanData.examDate}
+        </div>
       )}
+      {scanData.session && (
+        <div>
+          <strong>Session:</strong> {scanData.session}
+        </div>
+      )}
+    </div>
+  </section>
+)}
 
       {/* Table */}
       <section
@@ -926,34 +945,42 @@ export default function QRPaymentVerifier() {
             <tbody>
               {scanTable.map((r) => (
                 <tr key={r.id}>
-                  <td
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      padding: 6,
-                      textAlign: "center",
-                    }}
-                  >
-                    {r.id}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.enrollment}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.name}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.phone}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.examDate || "-"}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.session || "-"}
-                  </td>
-                  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                    {r.time}
-                  </td>
-                </tr>
+  <td
+    style={{
+      border: "1px solid #e5e7eb",
+      padding: 6,
+      textAlign: "center",
+    }}
+  >
+    {r.id}
+  </td>
+
+  {/* Name (stored in enrollment) */}
+  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
+    {r.enrollment}
+  </td>
+
+  {/* Phone */}
+  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
+    {r.phone}
+  </td>
+
+  {/* Date */}
+  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
+    {r.examDate || "-"}
+  </td>
+
+  {/* Session */}
+  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
+    {r.session || "-"}
+  </td>
+
+  {/* Time */}
+  <td style={{ border: "1px solid #e5e7eb", padding: 6 }}>
+    {r.time}
+  </td>
+</tr>
+
               ))}
               {scanTable.length === 0 && (
                 <tr>
