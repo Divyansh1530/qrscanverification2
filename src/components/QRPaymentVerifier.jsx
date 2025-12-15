@@ -275,21 +275,23 @@ export default function QRPaymentVerifier() {
     }
 
     if (used) {
-      setResult({
-        type: "used",
-        msg: `${rec.name || rec.enrollment} already scanned`,
-        rec,
-        when: used.when,
-        examDate: used.examDate || date,
-        session: used.session || session,
-      });
-      setScanData({
-        ...rec,
-        examDate: used.examDate || date,
-        session: used.session || session,
-      });
-      return;
-    }
+  setResult({
+    type: "used",
+    msg: "QR already scanned",
+    rec,
+    when: used.when,
+    examDate: used.examDate || date,
+    session: used.session || session,
+  });
+
+  setScanData({
+    ...rec,
+    examDate: used.examDate || date,
+    session: used.session || session,
+  });
+
+  return;
+}
 
     // valid first-time scan for this date+session
     addToTable(rec, parsed);
