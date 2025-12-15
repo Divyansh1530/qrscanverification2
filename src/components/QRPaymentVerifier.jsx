@@ -830,7 +830,7 @@ export default function QRPaymentVerifier() {
         </section>
       )}
 
-      {scanData && (
+      {scanData && result?.type === "paid" && (
   <section
     style={{
       marginTop: 8,
@@ -852,25 +852,56 @@ export default function QRPaymentVerifier() {
     </div>
 
     <div style={{ fontSize: 13 }}>
-      <div>
-        <strong>Name:</strong> {scanData.enrollment}
-      </div>
-      <div>
-        <strong>Phone:</strong> {scanData.phone}
-      </div>
+      <div><strong>Name:</strong> {scanData.enrollment}</div>
+      <div><strong>Phone:</strong> {scanData.phone}</div>
       {scanData.examDate && (
-        <div>
-          <strong>Date of Exam:</strong> {scanData.examDate}
-        </div>
+        <div><strong>Date:</strong> {scanData.examDate}</div>
       )}
       {scanData.session && (
-        <div>
-          <strong>Session:</strong> {scanData.session}
-        </div>
+        <div><strong>Session:</strong> {scanData.session}</div>
       )}
     </div>
   </section>
 )}
+{scanData && result?.type === "used" && (
+  <section
+    style={{
+      marginTop: 8,
+      borderRadius: 12,
+      background: "#fff7ed",
+      padding: 10,
+      border: "1px solid #fdba74",
+    }}
+  >
+    <div
+      style={{
+        fontWeight: 700,
+        marginBottom: 6,
+        fontSize: 15,
+        color: "#9a3412",
+      }}
+    >
+      ⚠ QR already scanned
+    </div>
+
+    <div style={{ fontSize: 13 }}>
+      <div><strong>Name:</strong> {scanData.enrollment}</div>
+      <div><strong>Phone:</strong> {scanData.phone}</div>
+      {result.examDate && (
+        <div><strong>Date:</strong> {result.examDate}</div>
+      )}
+      {result.session && (
+        <div><strong>Session:</strong> {result.session}</div>
+      )}
+      <div>
+        <strong>First Used At:</strong>{" "}
+        {new Date(result.when).toLocaleTimeString()}{" "}
+        {new Date(result.when).toLocaleDateString()}
+      </div>
+    </div>
+  </section>
+)}
+
 
       {/* Table */}
       <section
