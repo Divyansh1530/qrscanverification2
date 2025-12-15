@@ -170,6 +170,7 @@ export default function QRPaymentVerifier() {
     );
   };
 
+  
   /* ---------- mark as used ---------- */
   const markUsed = (rec, meta) => {
     const base = normalizeNum(rec.enrollment);
@@ -767,7 +768,7 @@ export default function QRPaymentVerifier() {
               <div style={{ fontWeight: 700, marginBottom: 2 }}>
                 ✅ {result.msg}
               </div>
-              <div>Enrollment: {result.rec?.enrollment}</div>
+              <div>Name: {result.rec?.enrollment}</div>
               <div>Name: {result.rec?.name}</div>
               {result.examDate && <div>Date: {result.examDate}</div>}
               {result.session && <div>Session: {result.session}</div>}
@@ -841,7 +842,7 @@ export default function QRPaymentVerifier() {
             Last Scanned
           </div>
           <div style={{ fontSize: 13 }}>
-            <div>Enrollment: {scanData.enrollment}</div>
+            <div>Name: {scanData.enrollment}</div>
             <div>Name: {scanData.name}</div>
             <div>Phone: {scanData.phone}</div>
             {scanData.examDate && <div>Date of Exam: {scanData.examDate}</div>}
@@ -904,9 +905,7 @@ export default function QRPaymentVerifier() {
             <thead style={{ background: "#f3f4f6" }}>
               <tr>
                 <th style={{ border: "1px solid #e5e7eb", padding: 6 }}>#</th>
-                <th style={{ border: "1px solid #e5e7eb", padding: 6 }}>
-                  Enrollment
-                </th>
+                
                 <th style={{ border: "1px solid #e5e7eb", padding: 6 }}>
                   Name
                 </th>
@@ -959,7 +958,7 @@ export default function QRPaymentVerifier() {
               {scanTable.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     style={{
                       textAlign: "center",
                       padding: 8,
